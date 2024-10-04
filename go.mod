@@ -3,8 +3,12 @@ module github.com/micahco/web
 go 1.22.7
 
 require (
+	github.com/alexedwards/scs/pgxstore v0.0.0-20240316134038-7e11d57e8885
+	github.com/alexedwards/scs/v2 v2.8.0
 	github.com/go-chi/chi/v5 v5.1.0
 	github.com/jackc/pgx/v5 v5.7.1
+	github.com/justinas/nosurf v1.1.1
+	github.com/lmittmann/tint v1.0.5
 )
 
 require (

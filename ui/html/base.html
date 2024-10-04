@@ -1,0 +1,43 @@
+{{define "base"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{template "title" .}}</title>
+    <link rel="stylesheet" href="/static/main.css">
+</head>
+<body>
+    {{if .Flash.Message}}
+    <div role="status" class="flash-{{.Flash.Type}}">
+        {{.Flash.Message}}
+    </div>
+    {{end}}
+    <header>
+        {{if .IsAuthenticated}}
+        <form action="/auth/logout" method="POST">
+            <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+            <button>
+                Logout
+            </button>
+        </form>
+        {{end}}
+    </header>
+    {{template "main" .}}
+    <footer class="mt-16 pb-4 text-sm text-center sm:text-left">
+        <p class="leading-6 text-stone-500">
+            Copyright &copy; {{.CurrentYear}}. 
+            All rights reserved.
+            <span class="block sm:inline">
+                Developed for Oregon State University. 
+            </span>
+        </p>
+        <nav class="space-x-2">
+            <a href="/about">About</a>
+            <a href="mailto:cowellmi@oregonstate.edu">Contact</a>
+        </nav>
+    </footer>
+    {{template "scripts" .}}
+</body>
+</html>
+{{end}}

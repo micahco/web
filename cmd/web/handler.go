@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/micahco/web/internal/httperr"
@@ -18,7 +19,10 @@ func (app *application) handle(handler handleWithError) http.HandlerFunc {
 			if errors.As(err, &httpErr) {
 				// Log wrapped error if exists.
 				if err := errors.Unwrap(httpErr); err != nil {
-					app.logger.Printf("%v", err)
+					app.logger.Error(
+						"handled unwrapped error",
+						slog.Any("error", err),
+					)
 				}
 
 				http.Error(w, httpErr.Message(), httpErr.Code())
@@ -32,7 +36,10 @@ func (app *application) handle(handler handleWithError) http.HandlerFunc {
 				http.StatusInternalServerError,
 			)
 
-			app.logger.Printf("%v", err)
+			app.logger.Error(
+				"handled unexpected error",
+				slog.Any("error", err),
+			)
 		}
 	}
 }

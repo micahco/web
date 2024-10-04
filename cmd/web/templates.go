@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"path/filepath"
 	"time"
+
+	"github.com/micahco/web/ui"
 )
 
 type templateData struct {
@@ -76,11 +78,12 @@ func (app *application) renderFromCache(w http.ResponseWriter, statusCode int, p
 
 var functions = template.FuncMap{}
 
-// Create new template cache with file system (usually embed).
+// Create new template cache with ui.Files embedded file system.
 // Creates a template for each page in the html/pages directory
 // nested with html/base.html and html/partials.
-func newTemplateCache(fsys fs.FS) (map[string]*template.Template, error) {
+func newTemplateCache() (map[string]*template.Template, error) {
 	cache := map[string]*template.Template{}
+	fsys := ui.Files
 
 	// Get list of pages
 	pages, err := fs.Glob(fsys, "html/pages/*.html")
