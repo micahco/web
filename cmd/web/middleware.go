@@ -13,7 +13,7 @@ func (app *application) recovery(next http.Handler) http.Handler {
 			if err := recover(); err != nil {
 				w.Header().Set("Connection", "close")
 
-				app.logger.Error("recovered from panic", slog.Any("error", err))
+				app.logger.Error("recovered from panic", slog.Any("err", err))
 
 				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			}

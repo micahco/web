@@ -22,8 +22,6 @@ type templateData struct {
 
 // Render page template with data
 func (app *application) render(w http.ResponseWriter, statusCode int, page string, data interface{}) error {
-	w.WriteHeader(statusCode)
-
 	td := templateData{
 		CurrentYear: time.Now().Year(),
 		//Flash:           app.popFlash(r),
@@ -53,21 +51,27 @@ func (app *application) render(w http.ResponseWriter, statusCode int, page strin
 		return err
 	}
 
-	return t.ExecuteTemplate(w, "base", td)
+	return writeTemplate(t, td, w, statusCode)
 }
 
 func (app *application) renderFromCache(w http.ResponseWriter, statusCode int, page string, td templateData) error {
-	ts, ok := app.templateCache[page]
+	t, ok := app.templateCache[page]
 	if !ok {
 		return fmt.Errorf("template %s does not exist", page)
 	}
 
+	return writeTemplate(t, td, w, statusCode)
+}
+
+func writeTemplate(t *template.Template, td templateData, w http.ResponseWriter, statusCode int) error {
 	buf := new(bytes.Buffer)
 
-	err := ts.ExecuteTemplate(buf, "base", td)
+	err := t.ExecuteTemplate(buf, "base", td)
 	if err != nil {
 		return err
 	}
+
+	w.WriteHeader(statusCode)
 
 	if _, err := buf.WriteTo(w); err != nil {
 		return err

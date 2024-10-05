@@ -56,7 +56,7 @@ func main() {
 	// PostgreSQL
 	pool, err := openPool(cfg)
 	if err != nil {
-		logger.Error("unable to open pgpool", slog.Any("error", err))
+		logger.Error("unable to open pgpool", slog.Any("err", err))
 		os.Exit(1)
 	}
 	defer pool.Close()
@@ -69,7 +69,7 @@ func main() {
 	// Template cache
 	tc, err := newTemplateCache()
 	if err != nil {
-		logger.Error("unable to create template cache", slog.Any("error", err))
+		logger.Error("unable to create template cache", slog.Any("err", err))
 		os.Exit(1)
 	}
 
