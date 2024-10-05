@@ -59,3 +59,14 @@ audit:
 	staticcheck ./...
 	@echo 'Running tests...'
 	go test -race -vet=off ./...
+
+
+# ==================================================================================== #
+# BUILD
+# ==================================================================================== #
+
+## build/web: build the cmd/web application
+.PHONY: build/web
+build/web:
+	@echo 'Building cmd/web...'
+	go build -ldflags="-s" -o=./bin/web ./cmd/web
