@@ -9,25 +9,26 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/justinas/nosurf"
 	"github.com/micahco/web/ui"
 )
 
 type templateData struct {
 	CSRFToken       string
 	CurrentYear     int
-	Flash           string
+	Flash           FlashMessage
 	IsAuthenticated bool
 	Data            interface{}
 }
 
 // Render page template with data
-func (app *application) render(w http.ResponseWriter, statusCode int, page string, data interface{}) error {
+func (app *application) render(w http.ResponseWriter, r *http.Request, statusCode int, page string, data interface{}) error {
 	td := templateData{
-		CurrentYear: time.Now().Year(),
-		//Flash:           app.popFlash(r),
-		//IsAuthenticated: app.isAuthenticated(r),
-		//CSRFToken: nosurf.Token(r),
-		Data: data,
+		CurrentYear:     time.Now().Year(),
+		Flash:           app.popFlash(r),
+		IsAuthenticated: app.isAuthenticated(r),
+		CSRFToken:       nosurf.Token(r),
+		Data:            data,
 	}
 
 	// In production, use template cache
@@ -36,12 +37,12 @@ func (app *application) render(w http.ResponseWriter, statusCode int, page strin
 	}
 
 	// In development, parse files locally
-	t, err := template.ParseFiles("./ui/html/base.html")
+	t, err := template.ParseFiles("./ui/html/base.tmpl")
 	if err != nil {
 		return err
 	}
 
-	t, err = t.Funcs(functions).ParseGlob("./ui/html/partials/*.html")
+	t, err = t.Funcs(functions).ParseGlob("./ui/html/partials/*.tmpl")
 	if err != nil {
 		return err
 	}
@@ -84,13 +85,13 @@ var functions = template.FuncMap{}
 
 // Create new template cache with ui.Files embedded file system.
 // Creates a template for each page in the html/pages directory
-// nested with html/base.html and html/partials.
+// nested with html/base.tmpl and html/partials.
 func newTemplateCache() (map[string]*template.Template, error) {
 	cache := map[string]*template.Template{}
 	fsys := ui.Files
 
 	// Get list of pages
-	pages, err := fs.Glob(fsys, "html/pages/*.html")
+	pages, err := fs.Glob(fsys, "html/pages/*.tmpl")
 	if err != nil {
 		return nil, err
 	}
@@ -101,17 +102,17 @@ func newTemplateCache() (map[string]*template.Template, error) {
 
 		// Nest page with base template and partials
 		patterns := []string{
-			"html/base.html",
-			"html/partials/*.html",
+			"html/base.tmpl",
+			"html/partials/*.tmpl",
 			page,
 		}
 
-		ts, err := template.New(name).Funcs(functions).ParseFS(fsys, patterns...)
+		tmpl, err := template.New(name).Funcs(functions).ParseFS(fsys, patterns...)
 		if err != nil {
 			return nil, err
 		}
 
-		cache[name] = ts
+		cache[name] = tmpl
 	}
 
 	return cache, nil

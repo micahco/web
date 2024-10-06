@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 
@@ -60,39 +61,41 @@ func (app *application) noSurf(next http.Handler) http.Handler {
 	return csrfHandler
 }
 
-// TODO:
-// func (app *application) authenticate(next http.Handler) http.Handler {
-// 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-// 		id := app.sessionManager.GetInt(r.Context(), authenticatedUserIDSessionKey)
-// 		if id == 0 {
-// 			next.ServeHTTP(w, r)
-// 			return
-// 		}
+func (app *application) authenticate(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id := app.sessionManager.GetInt(r.Context(), authenticatedUserIDSessionKey)
+		if id == 0 {
+			next.ServeHTTP(w, r)
 
-// 		exists, err := app.models.User.Exists(id)
-// 		if err != nil {
-// 			app.serverError(w, r, err)
-// 			return
-// 		}
+			return
+		}
 
-// 		if exists {
-// 			ctx := context.WithValue(r.Context(), isAuthenticatedContextKey, true)
-// 			r = r.WithContext(ctx)
-// 		}
+		exists, err := app.models.User.Exists(id)
+		if err != nil {
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			app.logger.Error("middleware authenticate", slog.Any("err", err))
 
-// 		next.ServeHTTP(w, r)
-// 	})
-// }
+			return
+		}
 
-// func (app *application) requireAuthentication(next http.Handler) http.Handler {
-// 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-// 		if !app.isAuthenticated(r) {
-// 			http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
-// 			return
-// 		}
+		if exists {
+			ctx := context.WithValue(r.Context(), isAuthenticatedContextKey, true)
+			r = r.WithContext(ctx)
+		}
 
-// 		w.Header().Add("Cache-Control", "no-store")
+		next.ServeHTTP(w, r)
+	})
+}
 
-// 		next.ServeHTTP(w, r)
-// 	})
-// }
+func (app *application) requireAuthentication(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !app.isAuthenticated(r) {
+			http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
+			return
+		}
+
+		w.Header().Add("Cache-Control", "no-store")
+
+		next.ServeHTTP(w, r)
+	})
+}

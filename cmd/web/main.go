@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/gob"
 	"flag"
 	"fmt"
 	"html/template"
 	"log/slog"
 	"net/http"
+	"net/mail"
+	"net/url"
 	"os"
 	"time"
 
@@ -14,6 +17,9 @@ import (
 	"github.com/alexedwards/scs/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/lmittmann/tint"
+	"github.com/micahco/web/internal/mailer"
+	"github.com/micahco/web/internal/models"
+	"github.com/micahco/web/ui"
 )
 
 type config struct {
@@ -32,19 +38,32 @@ type config struct {
 }
 
 type application struct {
+	baseURL        *url.URL
 	config         config
 	logger         *slog.Logger
+	mailer         *mailer.Mailer
+	models         models.Models
 	sessionManager *scs.SessionManager
 	templateCache  map[string]*template.Template
 }
 
 func main() {
 	var cfg config
+	var urlstr string
 
 	// Default flag values for production
 	flag.IntVar(&cfg.port, "port", 8080, "API server port")
 	flag.BoolVar(&cfg.dev, "dev", false, "Development mode")
+	flag.StringVar(&urlstr, "url", "", "Base URL")
+
 	flag.StringVar(&cfg.db.dsn, "db-dsn", "", "PostgreSQL DSN")
+
+	flag.StringVar(&cfg.smtp.host, "smtp-host", "", "SMTP host")
+	flag.IntVar(&cfg.smtp.port, "smtp-port", 2525, "SMTP port")
+	flag.StringVar(&cfg.smtp.username, "smtp-user", "", "SMTP username")
+	flag.StringVar(&cfg.smtp.password, "smtp-pass", "", "SMTP password")
+	flag.StringVar(&cfg.smtp.sender, "smtp-addr", "", "SMTP sender address")
+
 	flag.Parse()
 
 	// Logger
@@ -52,6 +71,13 @@ func main() {
 	logger := slog.New(h)
 	// Create error log for http.Server
 	errLog := slog.NewLogLogger(h, slog.LevelError)
+
+	// Base URL
+	baseURL, err := url.Parse(urlstr)
+	if err != nil {
+		logger.Error("unable to parse url", slog.Any("err", err))
+		os.Exit(1)
+	}
 
 	// PostgreSQL
 	pool, err := openPool(cfg)
@@ -61,10 +87,31 @@ func main() {
 	}
 	defer pool.Close()
 
+	// Mailer
+	sender := &mail.Address{
+		Name:    "Do Not Reply",
+		Address: cfg.smtp.sender,
+	}
+	logger.Debug("dialing SMTP server...")
+	mailer, err := mailer.New(
+		cfg.smtp.host,
+		cfg.smtp.port,
+		cfg.smtp.username,
+		cfg.smtp.password,
+		sender,
+		ui.Files,
+		"mail/*.tmpl",
+	)
+	if err != nil {
+		logger.Error("unable to create mailer", slog.Any("err", err))
+		os.Exit(1)
+	}
+
 	// Session manager
 	sm := scs.New()
 	sm.Store = pgxstore.New(pool)
 	sm.Lifetime = 12 * time.Hour
+	gob.Register(FlashMessage{})
 
 	// Template cache
 	tc, err := newTemplateCache()
@@ -74,8 +121,11 @@ func main() {
 	}
 
 	app := &application{
+		baseURL:        baseURL,
 		config:         cfg,
 		logger:         logger,
+		mailer:         mailer,
+		models:         models.New(pool),
 		sessionManager: sm,
 		templateCache:  tc,
 	}
@@ -119,4 +169,15 @@ func newSlogHandler(cfg config) slog.Handler {
 
 	// Production use JSON handler with default opts
 	return slog.NewJSONHandler(os.Stdout, nil)
+}
+
+func (app *application) background(fn func()) {
+	go func() {
+		defer func() {
+			if err := recover(); err != nil {
+				app.logger.Error("background", slog.Any("err", err))
+			}
+		}()
+		fn()
+	}()
 }

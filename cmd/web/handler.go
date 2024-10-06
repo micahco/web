@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+
+	"github.com/micahco/web/internal/validator"
 )
 
 type withError func(w http.ResponseWriter, r *http.Request) error
@@ -14,10 +16,9 @@ func (app *application) handle(h withError) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := h(w, r); err != nil {
 			// First, check if error is a response error. A response error
-			// will be intentionally created from a withError handler.
+			// will be intentionally created from within a withError handler.
 			// This error may have a list of errors wrapped within it.
-			// These errors will be logged but response errors will not,
-			// Since these errors are expected and user-facing.
+			// Only the wrapped errors will be logged.
 			var respErr respErr
 			if errors.As(err, &respErr) {
 				// Log wrapped error if exists.
@@ -78,4 +79,11 @@ func (e respErr) Message() string {
 	}
 
 	return http.StatusText(e.statusCode)
+}
+
+func validationError(v validator.Validator) error {
+	return respErr{
+		statusCode: http.StatusUnprocessableEntity,
+		message:    v.Errors(),
+	}
 }
