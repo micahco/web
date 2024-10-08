@@ -5,10 +5,10 @@ import (
 	"errors"
 	"time"
 
+	"github.com/alexedwards/argon2id"
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"golang.org/x/crypto/bcrypt"
 )
 
 type UserModel struct {
@@ -34,7 +34,7 @@ func scanUser(row pgx.CollectableRow) (*User, error) {
 }
 
 func (m *UserModel) Insert(email, password string) (int, error) {
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	hash, err := argon2id.CreateHash(password, argon2id.DefaultParams)
 	if err != nil {
 		return 0, err
 	}
@@ -72,13 +72,12 @@ func (m *UserModel) Authenticate(email, password string) (int, error) {
 		}
 	}
 
-	err = bcrypt.CompareHashAndPassword(user.PasswordHash, []byte(password))
+	match, err := argon2id.ComparePasswordAndHash(password, string(user.PasswordHash))
 	if err != nil {
-		if errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
-			return -0, ErrInvalidCredentials
-		} else {
-			return 0, err
-		}
+		return 0, err
+	}
+	if !match {
+		return 0, ErrInvalidCredentials
 	}
 
 	return user.ID, nil
@@ -105,7 +104,7 @@ func (m *UserModel) ExistsEmail(email string) (bool, error) {
 }
 
 func (m *UserModel) UpdatePassword(email, password string) error {
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	hash, err := argon2id.CreateHash(password, argon2id.DefaultParams)
 	if err != nil {
 		return err
 	}
@@ -115,6 +114,28 @@ func (m *UserModel) UpdatePassword(email, password string) error {
 	_, err = m.pool.Exec(context.Background(), sql, hash, email)
 
 	return err
+}
+
+type UserProfile struct {
+	Email string
+}
+
+func scanUserProfile(row pgx.CollectableRow) (*UserProfile, error) {
+	var u UserProfile
+	err := row.Scan(&u.Email)
+
+	return &u, err
+}
+
+func (m *UserModel) GetProfile(id int) (*UserProfile, error) {
+	sql := "SELECT email_ FROM user_ WHERE id_ = $1;"
+
+	rows, err := m.pool.Query(context.Background(), sql, id)
+	if err != nil {
+		return nil, err
+	}
+
+	return pgx.CollectOneRow(rows, scanUserProfile)
 }
 
 func (m *UserModel) Delete(id int) error {
