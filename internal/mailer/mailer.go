@@ -18,14 +18,17 @@ type Mailer struct {
 	templateCache map[string]*template.Template
 }
 
+// Create new mailer with SMTP credentials and embedded fs using glob pattern
 func New(host string, port int, username string, password string, sender *mail.Address, fsys embed.FS, globPattern string) (*Mailer, error) {
 	cache := map[string]*template.Template{}
 
+	// Get list of filenames in embed using pattern
 	filenames, err := fs.Glob(fsys, globPattern)
 	if err != nil {
 		return nil, err
 	}
 
+	// Create template for each file and add to cache
 	for _, fname := range filenames {
 		name := filepath.Base(fname)
 

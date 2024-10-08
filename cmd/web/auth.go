@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/micahco/web/internal/crypto"
 	"github.com/micahco/web/internal/models"
 	"github.com/micahco/web/internal/validator"
 )
@@ -30,7 +29,7 @@ func (app *application) login(r *http.Request, userID int) error {
 		return err
 	}
 
-	app.sessionManager.Put(r.Context(), string(authenticatedUserIDSessionKey), userID)
+	app.sessionManager.Put(r.Context(), authenticatedUserIDSessionKey, userID)
 
 	return nil
 }
@@ -41,11 +40,12 @@ func (app *application) logout(r *http.Request) error {
 		return err
 	}
 
-	app.sessionManager.Remove(r.Context(), string(authenticatedUserIDSessionKey))
+	app.sessionManager.Remove(r.Context(), authenticatedUserIDSessionKey)
 
 	return nil
 }
 
+// Checks the auth context set by the authenticate middleware
 func (app *application) isAuthenticated(r *http.Request) bool {
 	isAuthenticated, ok := r.Context().Value(isAuthenticatedContextKey).(bool)
 	if !ok {
@@ -113,6 +113,7 @@ func (app *application) handleAuthLoginPost(w http.ResponseWriter, r *http.Reque
 		return err
 	}
 
+	// Redirect to homepage after authenticating the user.
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 
 	return nil
@@ -172,7 +173,7 @@ func (app *application) handleAuthSignupPost(w http.ResponseWriter, r *http.Requ
 		return err
 	}
 
-	// Don't send any email if user with email already exists
+	// If user does exist, do nothing but send flash message
 	if exists {
 		app.flash(r, f)
 		app.refresh(w, r)
@@ -196,36 +197,34 @@ func (app *application) handleAuthSignupPost(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	token, err := crypto.GenerateRandomString(32)
+	token, err := app.models.Verification.New(form.email)
 	if err != nil {
-		return err
+		return fmt.Errorf("signup create token: %w", err)
 	}
 
-	// Create link reference to auth endpoint
+	// Create link with token
 	ref, err := url.Parse("/auth/register")
 	if err != nil {
 		return err
 	}
-	// Set token query
 	q := ref.Query()
 	q.Set("token", token)
 	ref.RawQuery = q.Encode()
 	link := app.baseURL.ResolveReference(ref)
 
 	// Send mail in background routine
-	app.background(func() {
-		err = app.mailer.Send(form.email, "email_verification.tmpl", link)
-		if err != nil {
-			app.logger.Error("mailer", slog.Any("err", err))
-		}
-	})
-	app.logger.Debug("sent mail", slog.String("link", link.String()))
-
-	err = app.models.Verification.Insert(token, form.email)
-	if err != nil {
-		return err
+	if !app.config.dev {
+		app.background(func() {
+			err = app.mailer.Send(form.email, "email-verification.tmpl", link)
+			if err != nil {
+				app.logger.Error("mailer", slog.Any("err", err))
+			}
+		})
 	}
+	app.logger.Debug("mailed", slog.String("link", link.String()))
 
+	// Clear all session data and add form email to session. That way,
+	// when the user goes to register, won't have to re-enter email.
 	app.sessionManager.Clear(r.Context())
 	app.sessionManager.RenewToken(r.Context())
 	app.sessionManager.Put(r.Context(), verificationEmailSessionKey, form.email)
@@ -250,11 +249,15 @@ func (app *application) handleAuthRegisterGet(w http.ResponseWriter, r *http.Req
 
 	queryToken := r.URL.Query().Get("token")
 	if queryToken == "" {
-		return respErr{statusCode: http.StatusUnauthorized}
+		return respErr{
+			statusCode: http.StatusBadRequest,
+			message:    "missing verification token",
+		}
 	}
 
 	app.sessionManager.Put(r.Context(), verificationTokenSessionKey, queryToken)
 
+	// If session email exists, don't show email input in form.
 	hasSessionEmail := app.sessionManager.Exists(r.Context(), verificationEmailSessionKey)
 	data := authRegisterData{
 		HasSessionEmail: hasSessionEmail,
@@ -282,7 +285,6 @@ func (app *application) handleAuthRegisterPost(w http.ResponseWriter, r *http.Re
 		}
 	}
 
-	// Validate form
 	err := r.ParseForm()
 	if err != nil {
 		return respErr{
@@ -325,7 +327,7 @@ func (app *application) handleAuthRegisterPost(w http.ResponseWriter, r *http.Re
 		}
 		if errors.Is(err, models.ErrExpiredVerification) {
 			app.flash(r, ExpiredTokenFlash)
-			http.Redirect(w, r, "/auth/reset", http.StatusSeeOther)
+			http.Redirect(w, r, "/", http.StatusSeeOther)
 
 			return nil
 		}
@@ -333,12 +335,12 @@ func (app *application) handleAuthRegisterPost(w http.ResponseWriter, r *http.Re
 		return err
 	}
 
+	// Upon registration, purge db of all verifications with email.
 	err = app.models.Verification.Purge(email)
 	if err != nil {
 		return err
 	}
 
-	// Insert data
 	userID, err := app.models.User.Insert(email, form.password)
 	if err != nil {
 		if errors.Is(err, models.ErrDuplicateEmail) {
@@ -375,24 +377,44 @@ type authResetForm struct {
 }
 
 func (app *application) handleAuthResetPost(w http.ResponseWriter, r *http.Request) error {
-	err := r.ParseForm()
-	if err != nil {
-		return respErr{
-			statusCode: http.StatusBadRequest,
-			message:    "unable to parse form",
+	var email string
+
+	// Get users email if already authenticated.
+	if app.isAuthenticated(r) {
+		suid, err := app.getSessionUserID(r)
+		if err != nil {
+			return err
 		}
+
+		u, err := app.models.User.GetProfile(suid)
+		if err != nil {
+			return err
+		}
+
+		email = u.Email
+	} else {
+		// If not authenticated, parse form and validate email address
+		err := r.ParseForm()
+		if err != nil {
+			return respErr{
+				statusCode: http.StatusBadRequest,
+				message:    "unable to parse form",
+			}
+		}
+
+		form := authResetForm{email: r.Form.Get("email")}
+
+		form.Validate(validator.NotBlank(form.email), "invalid email: cannot be blank")
+		form.Validate(validator.MaxChars(form.email, 254), "invalid email: must be no more than 254 characters long")
+
+		if !form.IsValid() {
+			return validationError(form.Validator)
+		}
+
+		email = form.email
 	}
 
-	form := authResetForm{email: r.Form.Get("email")}
-
-	form.Validate(validator.NotBlank(form.email), "invalid email: cannot be blank")
-	form.Validate(validator.MaxChars(form.email, 254), "invalid email: must be no more than 254 characters long")
-
-	if !form.IsValid() {
-		return validationError(form.Validator)
-	}
-
-	exists, err := app.models.User.ExistsEmail(form.email)
+	exists, err := app.models.User.ExistsEmail(email)
 	if err != nil {
 		return err
 	}
@@ -410,41 +432,50 @@ func (app *application) handleAuthResetPost(w http.ResponseWriter, r *http.Reque
 		return nil
 	}
 
-	token, err := crypto.GenerateRandomString(32)
+	// Check if link verification has already been created
+	v, err := app.models.Verification.Get(email)
+	if err != nil && err != models.ErrNoRecord {
+		return err
+	}
+
+	// Don't send a new link if less than 5 minutes since last
+	if v != nil {
+		if time.Since(v.CreatedAt) < 5*time.Minute {
+			app.flash(r, f)
+			app.refresh(w, r)
+
+			return nil
+		}
+	}
+
+	token, err := app.models.Verification.New(email)
 	if err != nil {
 		return err
 	}
 
-	// Create link reference to auth endpoint
+	// Create link with token
 	ref, err := url.Parse("/auth/reset/update")
 	if err != nil {
 		return err
 	}
-
-	// Set token query
 	q := ref.Query()
 	q.Set("token", token)
 	ref.RawQuery = q.Encode()
-
 	link := app.baseURL.ResolveReference(ref)
 
 	// Send mail in background routine
-	app.background(func() {
-		err = app.mailer.Send(form.email, "reset_password.tmpl", link)
-		if err != nil {
-			app.logger.Error("mailer", slog.Any("err", err))
-		}
-	})
-	app.logger.Debug("sent mail", slog.String("link", link.String()))
-
-	err = app.models.Verification.Insert(token, form.email)
-	if err != nil {
-		return err
+	if !app.config.dev {
+		app.background(func() {
+			err = app.mailer.Send(email, "email-verification.tmpl", link)
+			if err != nil {
+				app.logger.Error("mailer", slog.Any("err", err))
+			}
+		})
 	}
+	app.logger.Debug("mailed", slog.String("link", link.String()))
 
-	app.sessionManager.Clear(r.Context())
 	app.sessionManager.RenewToken(r.Context())
-	app.sessionManager.Put(r.Context(), resetEmailSessionKey, form.email)
+	app.sessionManager.Put(r.Context(), resetEmailSessionKey, email)
 
 	app.flash(r, f)
 	app.refresh(w, r)
@@ -546,7 +577,7 @@ func (app *application) handleAuthResetUpdatePost(w http.ResponseWriter, r *http
 	}
 	app.flash(r, f)
 
-	http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 
 	return nil
 }

@@ -37,17 +37,17 @@ func (app *application) render(w http.ResponseWriter, r *http.Request, statusCod
 	}
 
 	// In development, parse files locally
-	t, err := template.ParseFiles("./ui/html/base.tmpl")
+	t, err := template.ParseFiles("./ui/web/base.tmpl")
 	if err != nil {
 		return err
 	}
 
-	t, err = t.Funcs(functions).ParseGlob("./ui/html/partials/*.tmpl")
+	t, err = t.Funcs(functions).ParseGlob("./ui/web/partials/*.tmpl")
 	if err != nil {
 		return err
 	}
 
-	t, err = t.ParseFiles("./ui/html/pages/" + page)
+	t, err = t.ParseFiles("./ui/web/pages/" + page)
 	if err != nil {
 		return err
 	}
@@ -84,14 +84,14 @@ func writeTemplate(t *template.Template, td templateData, w http.ResponseWriter,
 var functions = template.FuncMap{}
 
 // Create new template cache with ui.Files embedded file system.
-// Creates a template for each page in the html/pages directory
-// nested with html/base.tmpl and html/partials.
+// Creates a template for each page in the web/pages directory
+// nested with web/base.tmpl and web/partials.
 func newTemplateCache() (map[string]*template.Template, error) {
 	cache := map[string]*template.Template{}
 	fsys := ui.Files
 
 	// Get list of pages
-	pages, err := fs.Glob(fsys, "html/pages/*.tmpl")
+	pages, err := fs.Glob(fsys, "web/pages/*.tmpl")
 	if err != nil {
 		return nil, err
 	}
@@ -102,8 +102,8 @@ func newTemplateCache() (map[string]*template.Template, error) {
 
 		// Nest page with base template and partials
 		patterns := []string{
-			"html/base.tmpl",
-			"html/partials/*.tmpl",
+			"web/base.tmpl",
+			"web/partials/*.tmpl",
 			page,
 		}
 

@@ -162,6 +162,7 @@ func newSlogHandler(cfg config) slog.Handler {
 	if cfg.dev {
 		// Development text hanlder
 		return tint.NewHandler(os.Stdout, &tint.Options{
+			AddSource:  true,
 			Level:      slog.LevelDebug,
 			TimeFormat: time.Kitchen,
 		})

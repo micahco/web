@@ -2,6 +2,9 @@ package models
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base32"
 	"errors"
 	"time"
 
@@ -10,7 +13,7 @@ import (
 )
 
 const (
-	expiration = time.Hour * 24
+	ttl = time.Hour
 )
 
 type VerificationModel struct {
@@ -18,7 +21,7 @@ type VerificationModel struct {
 }
 
 type Verification struct {
-	Token     string
+	Hash      []byte
 	Email     string
 	Expiry    time.Time
 	CreatedAt time.Time
@@ -31,7 +34,7 @@ func (v *Verification) IsExpired() bool {
 func scanVerification(row pgx.CollectableRow) (*Verification, error) {
 	var v Verification
 	err := row.Scan(
-		&v.Token,
+		&v.Hash,
 		&v.Email,
 		&v.Expiry,
 		&v.CreatedAt)
@@ -39,16 +42,28 @@ func scanVerification(row pgx.CollectableRow) (*Verification, error) {
 	return &v, err
 }
 
-func (m *VerificationModel) Insert(token, email string) error {
-	expiry := time.Now().Add(expiration)
+// Create new verification token. Store hash in database and return token.
+func (m *VerificationModel) New(email string) (string, error) {
+	expiry := time.Now().Add(ttl)
+
+	b := make([]byte, 16)
+	_, err := rand.Read(b)
+	if err != nil {
+		return "", err
+	}
+
+	token := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(b)
+	// Note: sum is a byte array, while hash is a slice
+	sum := sha256.Sum256([]byte(token))
+	hash := sum[:]
 
 	sql := `INSERT INTO verification_
-		(token_, email_, expiry_)
+		(hash_, email_, expiry_)
 		VALUES($1, $2, $3);`
 
-	_, err := m.pool.Exec(context.Background(), sql, token, email, expiry)
+	_, err = m.pool.Exec(context.Background(), sql, hash, email, expiry)
 
-	return err
+	return token, err
 }
 
 func (m *VerificationModel) Get(email string) (*Verification, error) {
@@ -68,10 +83,13 @@ func (m *VerificationModel) Get(email string) (*Verification, error) {
 }
 
 func (m *VerificationModel) Verify(token, email string) error {
-	sql := `SELECT * FROM verification_ 
-		WHERE token_ = $1 AND email_ = $2;`
+	sum := sha256.Sum256([]byte(token))
+	hash := sum[:]
 
-	rows, err := m.pool.Query(context.Background(), sql, token, email)
+	sql := `SELECT * FROM verification_ 
+		WHERE hash_ = $1 AND email_ = $2;`
+
+	rows, err := m.pool.Query(context.Background(), sql, hash, email)
 	if err != nil {
 		return err
 	}

@@ -1,5 +1,7 @@
 # web
 
+A barebones web template with basic email authentication flow.
+
 ## Resources
 
 * [lets-go.alexedwards.net](https://lets-go.alexedwards.net)

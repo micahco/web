@@ -37,17 +37,6 @@ func secureHeaders(next http.Handler) http.Handler {
 	})
 }
 
-func (app *application) csrfFailureHandler() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		app.logger.Error("csrf failuie",
-			slog.String("method", r.Method),
-			slog.String("uri", r.URL.RequestURI()),
-		)
-
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-	})
-}
-
 func (app *application) noSurf(next http.Handler) http.Handler {
 	csrfHandler := nosurf.New(next)
 	csrfHandler.SetBaseCookie(http.Cookie{
@@ -61,6 +50,19 @@ func (app *application) noSurf(next http.Handler) http.Handler {
 	return csrfHandler
 }
 
+func (app *application) csrfFailureHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		app.logger.Error("csrf failure handler",
+			slog.String("method", r.Method),
+			slog.String("uri", r.URL.RequestURI()),
+		)
+
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+	})
+}
+
+// Reads session authenticated user id key and checks if that user exists.
+// If all systems check, then set authenticated context to the request.
 func (app *application) authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := app.sessionManager.GetInt(r.Context(), authenticatedUserIDSessionKey)
@@ -94,6 +96,7 @@ func (app *application) requireAuthentication(next http.Handler) http.Handler {
 			return
 		}
 
+		// Prevent pages that require authentication from being cached
 		w.Header().Add("Cache-Control", "no-store")
 
 		next.ServeHTTP(w, r)

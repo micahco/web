@@ -71,9 +71,23 @@ func (app *application) handleFavicon(w http.ResponseWriter, r *http.Request) {
 	http.ServeFileFS(w, r, ui.Files, "static/favicon.ico")
 }
 
+type userData struct {
+	Email string
+}
+
 func (app *application) getIndex(w http.ResponseWriter, r *http.Request) error {
 	if app.isAuthenticated(r) {
-		return app.render(w, r, http.StatusOK, "dashboard.tmpl", nil)
+		suid, err := app.getSessionUserID(r)
+		if err != nil {
+			return err
+		}
+
+		u, err := app.models.User.GetProfile(suid)
+		if err != nil {
+			return err
+		}
+
+		return app.render(w, r, http.StatusOK, "dashboard.tmpl", userData{u.Email})
 	}
 
 	return app.render(w, r, http.StatusOK, "login.tmpl", nil)

@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS verification_ (
-    token_ VARCHAR(100) PRIMARY KEY,
+    hash_ BYTEA PRIMARY KEY,
     email_ CITEXT NOT NULL,
     expiry_ TIMESTAMPTZ NOT NULL,
     created_at_ TIMESTAMPTZ NOT NULL DEFAULT NOW()

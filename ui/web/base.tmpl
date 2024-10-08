@@ -8,9 +8,9 @@
     <link rel="stylesheet" href="/static/main.css">
 </head>
 <body>
-    {{if .Flash.Message}}
-    <div role="status" class="max-w-2xl w-full mb-4 p-4 text-center border rounded-md flash-{{.Flash.Type}}">
-        {{.Flash.Message}}
+    {{with .Flash}}
+    <div role="status" class="flash-{{.Type}}">
+        {{.Message}}
     </div>
     {{end}}
     {{if .IsAuthenticated}}

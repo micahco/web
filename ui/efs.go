@@ -4,5 +4,5 @@ import (
 	"embed"
 )
 
-//go:embed "html" "static" "mail"
+//go:embed "static" "web" "mail"
 var Files embed.FS
