@@ -98,7 +98,9 @@ func (app *application) getArticleID(w http.ResponseWriter, r *http.Request) err
 
 	id, err := strconv.Atoi(p)
 	if err != nil {
-		return respErr{nil, http.StatusBadRequest, "invalid id param"}
+		msg := fmt.Sprintf("unable to convert to integer: %s", p)
+
+		return app.renderError(w, r, http.StatusBadRequest, msg)
 	}
 
 	fmt.Fprintf(w, "Article ID: %d", id)

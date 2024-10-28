@@ -8,8 +8,9 @@ import (
 	"net/url"
 	"time"
 
+	validation "github.com/go-ozzo/ozzo-validation/v4"
+	"github.com/go-ozzo/ozzo-validation/v4/is"
 	"github.com/micahco/web/internal/models"
-	"github.com/micahco/web/internal/validator"
 )
 
 type contextKey string
@@ -67,23 +68,23 @@ func (app *application) getSessionUserID(r *http.Request) (int, error) {
 type authLoginForm struct {
 	email    string
 	password string
-	validator.Validator
+}
+
+func (f authLoginForm) Validate() error {
+	return validation.ValidateStruct(&f,
+		validation.Field(&f.email, validation.Required, is.Email),
+		validation.Field(&f.password, validation.Required),
+	)
 }
 
 func (app *application) handleAuthLoginPost(w http.ResponseWriter, r *http.Request) error {
 	if app.isAuthenticated(r) {
-		return respErr{
-			statusCode: http.StatusBadRequest,
-			message:    "already authenticated",
-		}
+		return app.renderError(w, r, http.StatusBadRequest, "already authenticated")
 	}
 
 	err := r.ParseForm()
 	if err != nil {
-		return respErr{
-			statusCode: http.StatusBadRequest,
-			message:    "unable to parse form",
-		}
+		return app.renderError(w, r, http.StatusBadRequest, "unable to parse form")
 	}
 
 	form := authLoginForm{
@@ -91,21 +92,19 @@ func (app *application) handleAuthLoginPost(w http.ResponseWriter, r *http.Reque
 		password: r.Form.Get("password"),
 	}
 
-	form.Validate(validator.NotBlank(form.email), "invalid email: cannot be blank")
-	form.Validate(validator.Matches(form.email, validator.EmailRX), "invalid email: must be a valid email address")
-	form.Validate(validator.NotBlank(form.password), "invalid password: cannot be blank")
-
-	if !form.IsValid() {
-		return validationError(form.Validator)
+	err = form.Validate()
+	if err != nil {
+		return err
 	}
 
 	id, err := app.models.User.Authenticate(form.email, form.password)
 	if err != nil {
-		if errors.Is(err, models.ErrInvalidCredentials) {
-			return respErr{statusCode: http.StatusUnauthorized}
+		switch {
+		case errors.Is(err, models.ErrInvalidCredentials):
+			return app.renderError(w, r, http.StatusUnauthorized, nil)
+		default:
+			return err
 		}
-
-		return err
 	}
 
 	err = app.login(r, id)
@@ -132,33 +131,29 @@ func (app *application) handleAuthLogoutPost(w http.ResponseWriter, r *http.Requ
 
 type authSignupForm struct {
 	email string
-	validator.Validator
+}
+
+func (f authSignupForm) Validate() error {
+	return validation.ValidateStruct(&f,
+		validation.Field(&f.email, validation.Required, is.Email, validation.Length(0, 254)),
+	)
 }
 
 func (app *application) handleAuthSignupPost(w http.ResponseWriter, r *http.Request) error {
 	if app.isAuthenticated(r) {
-		return respErr{
-			statusCode: http.StatusBadRequest,
-			message:    "already authenticated",
-		}
+		return app.renderError(w, r, http.StatusBadRequest, "already authenticated")
 	}
 
 	err := r.ParseForm()
 	if err != nil {
-		return respErr{
-			statusCode: http.StatusBadRequest,
-			message:    "unable to parse form",
-		}
+		return app.renderError(w, r, http.StatusBadRequest, "unable to parse form")
 	}
 
 	form := authSignupForm{email: r.Form.Get("email")}
 
-	form.Validate(validator.NotBlank(form.email), "invalid email: cannot be blank")
-	form.Validate(validator.Matches(form.email, validator.EmailRX), "invalid email: must be a valid email address")
-	form.Validate(validator.MaxChars(form.email, 254), "invalid email: must be no more than 254 characters long")
-
-	if !form.IsValid() {
-		return validationError(form.Validator)
+	err = form.Validate()
+	if err != nil {
+		return err
 	}
 
 	// Consistent flash message

@@ -22,7 +22,7 @@ type templateData struct {
 }
 
 // Render page template with data
-func (app *application) render(w http.ResponseWriter, r *http.Request, statusCode int, page string, data interface{}) error {
+func (app *application) render(w http.ResponseWriter, r *http.Request, statusCode int, page string, data any) error {
 	td := templateData{
 		CurrentYear:     time.Now().Year(),
 		Flash:           app.popFlash(r),
@@ -53,6 +53,17 @@ func (app *application) render(w http.ResponseWriter, r *http.Request, statusCod
 	}
 
 	return writeTemplate(t, td, w, statusCode)
+}
+
+func (app *application) renderError(w http.ResponseWriter, r *http.Request, statusCode int, data any) error {
+	if data == nil {
+		data = http.StatusText(statusCode)
+	}
+
+	// TODO: render error template
+	http.Error(w, http.StatusText(statusCode), statusCode)
+
+	return nil
 }
 
 func (app *application) renderFromCache(w http.ResponseWriter, statusCode int, page string, td templateData) error {
