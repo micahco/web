@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -82,10 +83,12 @@ func (app *application) getIndex(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 
-		u, err := app.models.User.GetProfile(suid)
+		u, err := app.models.User.GetWithID(suid)
 		if err != nil {
 			return err
 		}
+
+		app.logger.Debug("dashboard", slog.Any("user", u))
 
 		return app.render(w, r, http.StatusOK, "dashboard.tmpl", userData{u.Email})
 	}

@@ -15,6 +15,9 @@ import (
 
 	"github.com/alexedwards/scs/pgxstore"
 	"github.com/alexedwards/scs/v2"
+	"github.com/go-playground/form/v4"
+	"github.com/go-playground/validator/v10"
+	"github.com/gofrs/uuid/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/lmittmann/tint"
 	"github.com/micahco/web/internal/mailer"
@@ -45,6 +48,8 @@ type application struct {
 	models         models.Models
 	sessionManager *scs.SessionManager
 	templateCache  map[string]*template.Template
+	formDecoder    *form.Decoder
+	validate       *validator.Validate
 }
 
 func main() {
@@ -111,6 +116,7 @@ func main() {
 	sm := scs.New()
 	sm.Store = pgxstore.New(pool)
 	sm.Lifetime = 12 * time.Hour
+	gob.Register(uuid.UUID{})
 	gob.Register(FlashMessage{})
 
 	// Template cache
@@ -128,6 +134,8 @@ func main() {
 		models:         models.New(pool),
 		sessionManager: sm,
 		templateCache:  tc,
+		formDecoder:    form.NewDecoder(),
+		validate:       validator.New(),
 	}
 
 	srv := &http.Server{

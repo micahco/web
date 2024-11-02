@@ -8,8 +8,7 @@ import (
 	"net/url"
 	"time"
 
-	validation "github.com/go-ozzo/ozzo-validation/v4"
-	"github.com/go-ozzo/ozzo-validation/v4/is"
+	"github.com/gofrs/uuid/v5"
 	"github.com/micahco/web/internal/models"
 )
 
@@ -24,7 +23,7 @@ const (
 	isAuthenticatedContextKey     = contextKey("isAuthenticated")
 )
 
-func (app *application) login(r *http.Request, userID int) error {
+func (app *application) login(r *http.Request, userID uuid.UUID) error {
 	err := app.sessionManager.RenewToken(r.Context())
 	if err != nil {
 		return err
@@ -56,48 +55,30 @@ func (app *application) isAuthenticated(r *http.Request) bool {
 	return isAuthenticated
 }
 
-func (app *application) getSessionUserID(r *http.Request) (int, error) {
-	id, ok := app.sessionManager.Get(r.Context(), authenticatedUserIDSessionKey).(int)
+func (app *application) getSessionUserID(r *http.Request) (uuid.UUID, error) {
+	id, ok := app.sessionManager.Get(r.Context(), authenticatedUserIDSessionKey).(uuid.UUID)
 	if !ok {
-		return 0, fmt.Errorf("unable to parse session id as int")
+		return uuid.UUID{}, fmt.Errorf("unable to parse session id as int")
 	}
 
 	return id, nil
 }
-
-type authLoginForm struct {
-	email    string
-	password string
-}
-
-func (f authLoginForm) Validate() error {
-	return validation.ValidateStruct(&f,
-		validation.Field(&f.email, validation.Required, is.Email),
-		validation.Field(&f.password, validation.Required),
-	)
-}
-
 func (app *application) handleAuthLoginPost(w http.ResponseWriter, r *http.Request) error {
 	if app.isAuthenticated(r) {
 		return app.renderError(w, r, http.StatusBadRequest, "already authenticated")
 	}
 
-	err := r.ParseForm()
-	if err != nil {
-		return app.renderError(w, r, http.StatusBadRequest, "unable to parse form")
+	var form struct {
+		Email    string `form:"email" validate:"required,email"`
+		Password string `form:"password" validate:"required"`
 	}
 
-	form := authLoginForm{
-		email:    r.Form.Get("email"),
-		password: r.Form.Get("password"),
-	}
-
-	err = form.Validate()
+	err := app.parseForm(r, &form)
 	if err != nil {
 		return err
 	}
 
-	id, err := app.models.User.Authenticate(form.email, form.password)
+	user, err := app.models.User.GetForCredentials(form.Email, form.Password)
 	if err != nil {
 		switch {
 		case errors.Is(err, models.ErrInvalidCredentials):
@@ -107,7 +88,7 @@ func (app *application) handleAuthLoginPost(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	err = app.login(r, id)
+	err = app.login(r, user.ID)
 	if err != nil {
 		return err
 	}
@@ -129,32 +110,20 @@ func (app *application) handleAuthLogoutPost(w http.ResponseWriter, r *http.Requ
 	return nil
 }
 
-type authSignupForm struct {
-	email string
-}
-
-func (f authSignupForm) Validate() error {
-	return validation.ValidateStruct(&f,
-		validation.Field(&f.email, validation.Required, is.Email, validation.Length(0, 254)),
-	)
-}
-
 func (app *application) handleAuthSignupPost(w http.ResponseWriter, r *http.Request) error {
 	if app.isAuthenticated(r) {
 		return app.renderError(w, r, http.StatusBadRequest, "already authenticated")
 	}
 
-	err := r.ParseForm()
-	if err != nil {
-		return app.renderError(w, r, http.StatusBadRequest, "unable to parse form")
+	var form struct {
+		Email string `form:"email" validate:"required,email"`
 	}
 
-	form := authSignupForm{email: r.Form.Get("email")}
-
-	err = form.Validate()
+	err := app.parseForm(r, &form)
 	if err != nil {
 		return err
 	}
+	fmt.Println(form.Email)
 
 	// Consistent flash message
 	f := FlashMessage{
@@ -163,7 +132,7 @@ func (app *application) handleAuthSignupPost(w http.ResponseWriter, r *http.Requ
 	}
 
 	// Check if user with email already exists
-	exists, err := app.models.User.ExistsEmail(form.email)
+	exists, err := app.models.User.ExistsWithEmail(form.Email)
 	if err != nil {
 		return err
 	}
@@ -177,7 +146,7 @@ func (app *application) handleAuthSignupPost(w http.ResponseWriter, r *http.Requ
 	}
 
 	// Check if link verification has already been created
-	v, err := app.models.Verification.Get(form.email)
+	v, err := app.models.Verification.Get(form.Email)
 	if err != nil && err != models.ErrNoRecord {
 		return err
 	}
@@ -192,7 +161,7 @@ func (app *application) handleAuthSignupPost(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	token, err := app.models.Verification.New(form.email)
+	token, err := app.models.Verification.New(form.Email)
 	if err != nil {
 		return fmt.Errorf("signup create token: %w", err)
 	}
@@ -210,7 +179,7 @@ func (app *application) handleAuthSignupPost(w http.ResponseWriter, r *http.Requ
 	// Send mail in background routine
 	if !app.config.dev {
 		app.background(func() {
-			err = app.mailer.Send(form.email, "email-verification.tmpl", link)
+			err = app.mailer.Send(form.Email, "email-verification.tmpl", link)
 			if err != nil {
 				app.logger.Error("mailer", slog.Any("err", err))
 			}
@@ -222,7 +191,7 @@ func (app *application) handleAuthSignupPost(w http.ResponseWriter, r *http.Requ
 	// when the user goes to register, won't have to re-enter email.
 	app.sessionManager.Clear(r.Context())
 	app.sessionManager.RenewToken(r.Context())
-	app.sessionManager.Put(r.Context(), verificationEmailSessionKey, form.email)
+	app.sessionManager.Put(r.Context(), verificationEmailSessionKey, form.Email)
 
 	app.flash(r, f)
 	app.refresh(w, r)
@@ -230,41 +199,26 @@ func (app *application) handleAuthSignupPost(w http.ResponseWriter, r *http.Requ
 	return nil
 }
 
-type authRegisterData struct {
-	HasSessionEmail bool
-}
-
 func (app *application) handleAuthRegisterGet(w http.ResponseWriter, r *http.Request) error {
 	if app.isAuthenticated(r) {
-		return respErr{
-			statusCode: http.StatusBadRequest,
-			message:    "already authenticated",
-		}
+		return app.renderError(w, r, http.StatusBadRequest, "already authenticated")
 	}
 
 	queryToken := r.URL.Query().Get("token")
 	if queryToken == "" {
-		return respErr{
-			statusCode: http.StatusBadRequest,
-			message:    "missing verification token",
-		}
+		return app.renderError(w, r, http.StatusBadRequest, "missing verification token")
 	}
 
 	app.sessionManager.Put(r.Context(), verificationTokenSessionKey, queryToken)
 
-	// If session email exists, don't show email input in form.
-	hasSessionEmail := app.sessionManager.Exists(r.Context(), verificationEmailSessionKey)
-	data := authRegisterData{
-		HasSessionEmail: hasSessionEmail,
+	var data struct {
+		HasSessionEmail bool
 	}
 
-	return app.render(w, r, http.StatusOK, "auth-register.tmpl", data)
-}
+	// If session email exists, don't show email input in form.
+	data.HasSessionEmail = app.sessionManager.Exists(r.Context(), verificationEmailSessionKey)
 
-type authRegisterForm struct {
-	email    string
-	password string
-	validator.Validator
+	return app.render(w, r, http.StatusOK, "auth-register.tmpl", data)
 }
 
 var ExpiredTokenFlash = FlashMessage{
@@ -274,51 +228,34 @@ var ExpiredTokenFlash = FlashMessage{
 
 func (app *application) handleAuthRegisterPost(w http.ResponseWriter, r *http.Request) error {
 	if app.isAuthenticated(r) {
-		return respErr{
-			statusCode: http.StatusBadRequest,
-			message:    "already authenticated",
-		}
+		return app.renderError(w, r, http.StatusBadRequest, "already authenticated")
 	}
 
-	err := r.ParseForm()
+	var form struct {
+		Email    string `form:"email" validate:"required,email,max=254"`
+		Password string `form:"password" validate:"required,min=8,max=72"`
+	}
+
+	form.Email = app.sessionManager.GetString(r.Context(), verificationEmailSessionKey)
+	err := app.parseForm(r, &form)
 	if err != nil {
-		return respErr{
-			statusCode: http.StatusBadRequest,
-			message:    "unable to parse form",
-		}
+		return err
 	}
 
-	form := authRegisterForm{
-		email:    r.Form.Get("email"),
-		password: r.Form.Get("password"),
+	err = app.validate.Struct(&form)
+	if err != nil {
+		return err
 	}
 
-	email := app.sessionManager.GetString(r.Context(), verificationEmailSessionKey)
-	if form.email != "" {
-		email = form.email
-	}
-
-	form.Validate(validator.NotBlank(email), "invalid login email: cannot be blank")
-	form.Validate(validator.Matches(email, validator.EmailRX), "invalid login email: must be a valid email address")
-	form.Validate(validator.MaxChars(email, 254), "invalid login email: must be no more than 254 characters long")
-	form.Validate(validator.NotBlank(form.password), "invalid password: cannot be blank")
-	form.Validate(validator.MinChars(form.password, 8), "invalid password: must be at least 8 characters long")
-	form.Validate(validator.MaxChars(form.password, 72), "invalid password: must be no more than 72 characters long")
-
-	if !form.IsValid() {
-		return validationError(form.Validator)
-	}
-
-	// Verify token authentication
 	token := app.sessionManager.GetString(r.Context(), verificationTokenSessionKey)
 	if token == "" {
-		return respErr{statusCode: http.StatusUnauthorized}
+		return app.renderError(w, r, http.StatusUnauthorized, nil)
 	}
 
-	err = app.models.Verification.Verify(token, email)
+	err = app.models.Verification.Verify(token, form.Email)
 	if err != nil {
 		if errors.Is(err, models.ErrNoRecord) {
-			return respErr{statusCode: http.StatusUnauthorized}
+			return app.renderError(w, r, http.StatusUnauthorized, nil)
 		}
 		if errors.Is(err, models.ErrExpiredVerification) {
 			app.flash(r, ExpiredTokenFlash)
@@ -331,15 +268,15 @@ func (app *application) handleAuthRegisterPost(w http.ResponseWriter, r *http.Re
 	}
 
 	// Upon registration, purge db of all verifications with email.
-	err = app.models.Verification.Purge(email)
+	err = app.models.Verification.Purge(form.Email)
 	if err != nil {
 		return err
 	}
 
-	userID, err := app.models.User.Insert(email, form.password)
+	user, err := app.models.User.New(form.Email, form.Password)
 	if err != nil {
 		if errors.Is(err, models.ErrDuplicateEmail) {
-			return respErr{statusCode: http.StatusUnauthorized}
+			return app.renderError(w, r, http.StatusUnauthorized, nil)
 		}
 
 		return err
@@ -347,7 +284,7 @@ func (app *application) handleAuthRegisterPost(w http.ResponseWriter, r *http.Re
 
 	// Login user
 	app.sessionManager.Clear(r.Context())
-	err = app.login(r, userID)
+	err = app.login(r, user.ID)
 	if err != nil {
 		return err
 	}
@@ -366,11 +303,6 @@ func (app *application) handleAuthResetGet(w http.ResponseWriter, r *http.Reques
 	return app.render(w, r, http.StatusOK, "auth-reset.tmpl", nil)
 }
 
-type authResetForm struct {
-	email string
-	validator.Validator
-}
-
 func (app *application) handleAuthResetPost(w http.ResponseWriter, r *http.Request) error {
 	var email string
 
@@ -381,35 +313,27 @@ func (app *application) handleAuthResetPost(w http.ResponseWriter, r *http.Reque
 			return err
 		}
 
-		u, err := app.models.User.GetProfile(suid)
+		user, err := app.models.User.GetWithID(suid)
 		if err != nil {
 			return err
 		}
 
-		email = u.Email
+		email = user.Email
 	} else {
 		// If not authenticated, parse form and validate email address
-		err := r.ParseForm()
+		var form struct {
+			Email string `form:"email" validate:"required,email"`
+		}
+
+		err := app.parseForm(r, &form)
 		if err != nil {
-			return respErr{
-				statusCode: http.StatusBadRequest,
-				message:    "unable to parse form",
-			}
+			return err
 		}
 
-		form := authResetForm{email: r.Form.Get("email")}
-
-		form.Validate(validator.NotBlank(form.email), "invalid email: cannot be blank")
-		form.Validate(validator.MaxChars(form.email, 254), "invalid email: must be no more than 254 characters long")
-
-		if !form.IsValid() {
-			return validationError(form.Validator)
-		}
-
-		email = form.email
+		email = form.Email
 	}
 
-	exists, err := app.models.User.ExistsEmail(email)
+	exists, err := app.models.User.ExistsWithEmail(email)
 	if err != nil {
 		return err
 	}
@@ -478,71 +402,44 @@ func (app *application) handleAuthResetPost(w http.ResponseWriter, r *http.Reque
 	return nil
 }
 
-type resetUpdateData struct {
-	HasSessionEmail bool
-}
-
 func (app *application) handleAuthResetUpdateGet(w http.ResponseWriter, r *http.Request) error {
 	queryToken := r.URL.Query().Get("token")
 	if queryToken == "" {
-		return respErr{statusCode: http.StatusUnauthorized}
+		return app.renderError(w, r, http.StatusUnauthorized, nil)
 	}
 
 	app.sessionManager.Put(r.Context(), resetTokenSessionKey, queryToken)
 
-	hasSessionEmail := app.sessionManager.Exists(r.Context(), resetEmailSessionKey)
-	data := resetUpdateData{
-		HasSessionEmail: hasSessionEmail,
+	var data struct {
+		HasSessionEmail bool
 	}
+	data.HasSessionEmail = app.sessionManager.Exists(r.Context(), resetEmailSessionKey)
 
 	return app.render(w, r, http.StatusOK, "auth-reset-update.tmpl", data)
 }
 
-type authResetUpdateForm struct {
-	email    string
-	password string
-	validator.Validator
-}
-
 func (app *application) handleAuthResetUpdatePost(w http.ResponseWriter, r *http.Request) error {
-	err := r.ParseForm()
+	var form struct {
+		Email    string `form:"email" validate:"required,email,max=254"`
+		Password string `form:"password" validate:"required,min=8,max=72"`
+	}
+
+	err := app.parseForm(r, &form)
 	if err != nil {
-		return respErr{
-			statusCode: http.StatusBadRequest,
-			message:    "unable to parse form",
-		}
+		return err
 	}
 
-	form := authResetUpdateForm{
-		email:    r.Form.Get("email"),
-		password: r.Form.Get("password"),
-	}
-
-	email := app.sessionManager.GetString(r.Context(), resetEmailSessionKey)
-	if form.email != "" {
-		email = form.email
-	}
-
-	form.Validate(validator.NotBlank(email), "invalid email: cannot be blank")
-	form.Validate(validator.Matches(email, validator.EmailRX), "invalid email: must be a valid email address")
-	form.Validate(validator.MaxChars(email, 254), "invalid email: must be no more than 254 characters long")
-	form.Validate(validator.NotBlank(form.password), "invalid password: cannot be blank")
-	form.Validate(validator.MinChars(form.password, 8), "invalid password: must be at least 8 characters long")
-	form.Validate(validator.MaxChars(form.password, 72), "invalid password: must be no more than 72 characters long")
-
-	if !form.IsValid() {
-		return validationError(form.Validator)
-	}
+	form.Email = app.sessionManager.GetString(r.Context(), resetEmailSessionKey)
 
 	token := app.sessionManager.GetString(r.Context(), resetTokenSessionKey)
 	if token == "" {
-		return respErr{statusCode: http.StatusUnauthorized}
+		return app.renderError(w, r, http.StatusUnauthorized, nil)
 	}
 
-	err = app.models.Verification.Verify(token, email)
+	err = app.models.Verification.Verify(token, form.Email)
 	if err != nil {
 		if errors.Is(err, models.ErrNoRecord) {
-			return respErr{statusCode: http.StatusUnauthorized}
+			return app.renderError(w, r, http.StatusUnauthorized, nil)
 		}
 		if errors.Is(err, models.ErrExpiredVerification) {
 			app.flash(r, ExpiredTokenFlash)
@@ -554,12 +451,22 @@ func (app *application) handleAuthResetUpdatePost(w http.ResponseWriter, r *http
 		return err
 	}
 
-	err = app.models.Verification.Purge(email)
+	user, err := app.models.User.GetWithEmail(form.Email)
 	if err != nil {
 		return err
 	}
 
-	err = app.models.User.UpdatePassword(email, form.password)
+	err = user.SetPasswordHash(form.Password)
+	if err != nil {
+		return err
+	}
+
+	err = app.models.User.Update(user)
+	if err != nil {
+		return err
+	}
+
+	err = app.models.Verification.Purge(form.Email)
 	if err != nil {
 		return err
 	}

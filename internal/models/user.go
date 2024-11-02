@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/alexedwards/argon2id"
+	"github.com/gofrs/uuid/v5"
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -16,132 +17,218 @@ type UserModel struct {
 }
 
 type User struct {
-	ID           int
+	ID           uuid.UUID
+	CreatedAt    time.Time
 	Email        string
 	PasswordHash []byte
-	CreatedAt    time.Time
 }
 
-func scanUser(row pgx.CollectableRow) (*User, error) {
-	var u User
-	err := row.Scan(
-		&u.ID,
-		&u.Email,
-		&u.PasswordHash,
-		&u.CreatedAt)
-
-	return &u, err
+func (u User) Validate() error {
+	return nil
 }
 
-func (m *UserModel) Insert(email, password string) (int, error) {
-	hash, err := argon2id.CreateHash(password, argon2id.DefaultParams)
-	if err != nil {
-		return 0, err
-	}
-
-	var id int
-
-	sql := `INSERT INTO user_ 
-		(email_, password_hash_)
-		VALUES($1, $2) RETURNING id_;`
-
-	err = m.pool.QueryRow(context.Background(), sql,
-		email, hash).Scan(&id)
-
-	if pgErrCode(err) == pgerrcode.UniqueViolation {
-		return 0, ErrDuplicateEmail
-	}
-
-	return id, err
-}
-
-func (m *UserModel) Authenticate(email, password string) (int, error) {
-	sql := "SELECT * FROM user_ WHERE email_ = $1;"
-
-	rows, err := m.pool.Query(context.Background(), sql, email)
-	if err != nil {
-		return 0, err
-	}
-
-	user, err := pgx.CollectOneRow(rows, scanUser)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return 0, ErrInvalidCredentials
-		} else {
-			return 0, err
-		}
-	}
-
-	match, err := argon2id.ComparePasswordAndHash(password, string(user.PasswordHash))
-	if err != nil {
-		return 0, err
-	}
-	if !match {
-		return 0, ErrInvalidCredentials
-	}
-
-	return user.ID, nil
-}
-
-func (m *UserModel) Exists(id int) (bool, error) {
-	var exists bool
-
-	sql := "SELECT EXISTS(SELECT true FROM user_ WHERE id_ = $1);"
-
-	err := m.pool.QueryRow(context.Background(), sql, id).Scan(&exists)
-
-	return exists, err
-}
-
-func (m *UserModel) ExistsEmail(email string) (bool, error) {
-	var exists bool
-
-	sql := "SELECT EXISTS(SELECT true FROM user_ WHERE email_ = $1);"
-
-	err := m.pool.QueryRow(context.Background(), sql, email).Scan(&exists)
-
-	return exists, err
-}
-
-func (m *UserModel) UpdatePassword(email, password string) error {
+func (u *User) SetPasswordHash(password string) error {
 	hash, err := argon2id.CreateHash(password, argon2id.DefaultParams)
 	if err != nil {
 		return err
 	}
 
-	sql := "UPDATE user_ SET password_hash_ = $1 WHERE email_ = $2;"
+	u.PasswordHash = []byte(hash)
 
-	_, err = m.pool.Exec(context.Background(), sql, hash, email)
-
-	return err
+	return nil
 }
 
-type UserProfile struct {
-	Email string
-}
+func (m *UserModel) New(email, password string) (*User, error) {
+	user := &User{Email: email}
 
-func scanUserProfile(row pgx.CollectableRow) (*UserProfile, error) {
-	var u UserProfile
-	err := row.Scan(&u.Email)
-
-	return &u, err
-}
-
-func (m *UserModel) GetProfile(id int) (*UserProfile, error) {
-	sql := "SELECT email_ FROM user_ WHERE id_ = $1;"
-
-	rows, err := m.pool.Query(context.Background(), sql, id)
+	err := user.SetPasswordHash(password)
 	if err != nil {
 		return nil, err
 	}
 
-	return pgx.CollectOneRow(rows, scanUserProfile)
+	err = m.Insert(user)
+	if err != nil {
+		return nil, err
+	}
+
+	return user, nil
 }
 
-func (m *UserModel) Delete(id int) error {
-	sql := "DELETE FROM user_ WHERE id_ = $1;"
+func (m *UserModel) Insert(user *User) error {
+	err := user.Validate()
+	if err != nil {
+		return err
+	}
 
-	_, err := m.pool.Exec(context.Background(), sql, id)
+	sql := `
+		INSERT INTO user_ (email_, password_hash_)
+		VALUES($1, $2)
+		RETURNING id_, created_at_;`
 
-	return err
+	args := []any{user.Email, user.PasswordHash}
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	err = m.pool.QueryRow(ctx, sql, args...).Scan(&user.ID, &user.CreatedAt)
+	if err != nil {
+		switch {
+		case pgErrCode(err) == pgerrcode.UniqueViolation:
+			return ErrDuplicateEmail
+		default:
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (m *UserModel) GetWithID(id uuid.UUID) (*User, error) {
+	var u User
+
+	sql := `
+		SELECT id_, created_at_, email_, password_hash_
+		FROM user_ WHERE id_ = $1;`
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	err := m.pool.QueryRow(ctx, sql, id).Scan(
+		&u.ID,
+		&u.CreatedAt,
+		&u.Email,
+		&u.PasswordHash,
+	)
+	if err != nil {
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			return nil, ErrInvalidCredentials
+		default:
+			return nil, err
+		}
+	}
+
+	return &u, nil
+}
+
+func (m *UserModel) GetWithEmail(email string) (*User, error) {
+	var u User
+
+	sql := `
+		SELECT id_, created_at_, email_, password_hash_
+		FROM user_ WHERE email_ = $1;`
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	err := m.pool.QueryRow(ctx, sql, email).Scan(
+		&u.ID,
+		&u.CreatedAt,
+		&u.Email,
+		&u.PasswordHash,
+	)
+	if err != nil {
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			return nil, ErrInvalidCredentials
+		default:
+			return nil, err
+		}
+	}
+
+	return &u, nil
+}
+
+func (m *UserModel) GetForCredentials(email, password string) (*User, error) {
+	u, err := m.GetWithEmail(email)
+	if err != nil {
+		return nil, err
+	}
+
+	match, err := argon2id.ComparePasswordAndHash(password, string(u.PasswordHash))
+	if err != nil {
+		return nil, err
+	}
+	if !match {
+		return nil, ErrInvalidCredentials
+	}
+
+	return u, nil
+}
+
+func (m *UserModel) Exists(id uuid.UUID) (bool, error) {
+	var exists bool
+
+	sql := `
+		SELECT EXISTS (
+			SELECT 1
+			FROM user_
+			WHERE id_ = $1
+		);`
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	err := m.pool.QueryRow(ctx, sql, id).Scan(&exists)
+	if err != nil {
+		return false, err
+	}
+
+	return exists, nil
+}
+
+func (m *UserModel) ExistsWithEmail(email string) (bool, error) {
+	var exists bool
+
+	sql := `
+		SELECT EXISTS (
+			SELECT 1
+			FROM user_
+			WHERE email_ = $1
+		);`
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	err := m.pool.QueryRow(ctx, sql, email).Scan(&exists)
+	if err != nil {
+		return false, err
+	}
+
+	return exists, nil
+}
+
+func (m UserModel) Update(user *User) error {
+	err := user.Validate()
+	if err != nil {
+		return err
+	}
+
+	sql := `
+		UPDATE user_ 
+        SET email_ = $1, password_hash_ = $2
+        WHERE id_ = $3 AND version_ = $4;`
+
+	args := []any{
+		user.Email,
+		user.PasswordHash,
+		user.ID,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	_, err = m.pool.Exec(ctx, sql, args...)
+	if err != nil {
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			return ErrEditConflict
+		case pgErrCode(err) == pgerrcode.UniqueViolation:
+			return ErrDuplicateEmail
+		default:
+			return err
+		}
+	}
+
+	return nil
 }

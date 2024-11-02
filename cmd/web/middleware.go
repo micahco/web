@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/gofrs/uuid/v5"
 	"github.com/justinas/nosurf"
 )
 
@@ -65,8 +66,8 @@ func (app *application) csrfFailureHandler() http.Handler {
 // If all systems check, then set authenticated context to the request.
 func (app *application) authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		id := app.sessionManager.GetInt(r.Context(), authenticatedUserIDSessionKey)
-		if id == 0 {
+		id, ok := app.sessionManager.Get(r.Context(), authenticatedUserIDSessionKey).(uuid.UUID)
+		if !ok {
 			next.ServeHTTP(w, r)
 
 			return
