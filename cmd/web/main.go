@@ -118,6 +118,7 @@ func main() {
 	sm.Lifetime = 12 * time.Hour
 	gob.Register(uuid.UUID{})
 	gob.Register(FlashMessage{})
+	gob.Register(FormErrors{})
 
 	// Template cache
 	tc, err := newTemplateCache()

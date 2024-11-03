@@ -1,13 +1,38 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/micahco/web/ui"
 )
+
+type withError func(w http.ResponseWriter, r *http.Request) error
+
+// smol http.HandlerFunc wrapper with error handling
+func (app *application) handle(h withError) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := h(w, r); err != nil {
+			var formErrors FormErrors
+			switch {
+			case errors.As(err, &formErrors):
+				app.putFormErrors(r, formErrors)
+				http.Redirect(w, r, r.Header.Get("Referer"), http.StatusSeeOther)
+			default:
+				app.logger.Error("handled unexpected error", slog.Any("err", err), slog.String("type", fmt.Sprintf("%T", err)))
+
+				http.Error(w,
+					http.StatusText(http.StatusInternalServerError),
+					http.StatusInternalServerError,
+				)
+			}
+		}
+	}
+}
 
 // App router
 func (app *application) routes() http.Handler {
@@ -98,9 +123,7 @@ func (app *application) getArticleID(w http.ResponseWriter, r *http.Request) err
 
 	id, err := strconv.Atoi(p)
 	if err != nil {
-		msg := fmt.Sprintf("unable to convert to integer: %s", p)
-
-		return app.renderError(w, r, http.StatusBadRequest, msg)
+		return app.renderError(w, r, http.StatusBadRequest, err)
 	}
 
 	fmt.Fprintf(w, "Article ID: %d", id)

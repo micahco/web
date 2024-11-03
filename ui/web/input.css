@@ -15,3 +15,7 @@
 .flash-error {
     @apply text-red-600;
 }
+
+.form-error {
+    @apply text-red-600;
+}

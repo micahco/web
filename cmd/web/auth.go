@@ -66,7 +66,7 @@ func (app *application) getSessionUserID(r *http.Request) (uuid.UUID, error) {
 }
 func (app *application) handleAuthLoginPost(w http.ResponseWriter, r *http.Request) error {
 	if app.isAuthenticated(r) {
-		return app.renderError(w, r, http.StatusBadRequest, "already authenticated")
+		return app.renderError(w, r, http.StatusBadRequest, errors.New("already authenticated"))
 	}
 
 	var form struct {
@@ -76,13 +76,7 @@ func (app *application) handleAuthLoginPost(w http.ResponseWriter, r *http.Reque
 
 	err := app.parseForm(r, &form)
 	if err != nil {
-		var validationErrors validator.ValidationErrors
-		switch {
-		case errors.As(err, &validationErrors):
-			return app.renderError(w, r, http.StatusUnprocessableEntity, validationErrors)
-		default:
-			return err
-		}
+		return app.renderError(w, r, http.StatusBadRequest, nil)
 	}
 
 	user, err := app.models.User.GetForCredentials(form.Email, form.Password)
@@ -119,7 +113,7 @@ func (app *application) handleAuthLogoutPost(w http.ResponseWriter, r *http.Requ
 
 func (app *application) handleAuthSignupPost(w http.ResponseWriter, r *http.Request) error {
 	if app.isAuthenticated(r) {
-		return app.renderError(w, r, http.StatusBadRequest, "already authenticated")
+		return app.renderError(w, r, http.StatusBadRequest, errors.New("already authenticated"))
 	}
 
 	var form struct {
@@ -128,13 +122,7 @@ func (app *application) handleAuthSignupPost(w http.ResponseWriter, r *http.Requ
 
 	err := app.parseForm(r, &form)
 	if err != nil {
-		var validationErrors validator.ValidationErrors
-		switch {
-		case errors.As(err, &validationErrors):
-			return app.renderError(w, r, http.StatusUnprocessableEntity, validationErrors)
-		default:
-			return err
-		}
+		return app.renderError(w, r, http.StatusBadRequest, nil)
 	}
 
 	// Consistent flash message
@@ -213,12 +201,12 @@ func (app *application) handleAuthSignupPost(w http.ResponseWriter, r *http.Requ
 
 func (app *application) handleAuthRegisterGet(w http.ResponseWriter, r *http.Request) error {
 	if app.isAuthenticated(r) {
-		return app.renderError(w, r, http.StatusBadRequest, "already authenticated")
+		return app.renderError(w, r, http.StatusBadRequest, errors.New("already authenticated"))
 	}
 
 	queryToken := r.URL.Query().Get("token")
 	if queryToken == "" {
-		return app.renderError(w, r, http.StatusBadRequest, "missing verification token")
+		return app.renderError(w, r, http.StatusBadRequest, errors.New("missing verification token"))
 	}
 
 	app.sessionManager.Put(r.Context(), verificationTokenSessionKey, queryToken)
@@ -240,7 +228,7 @@ var ExpiredTokenFlash = FlashMessage{
 
 func (app *application) handleAuthRegisterPost(w http.ResponseWriter, r *http.Request) error {
 	if app.isAuthenticated(r) {
-		return app.renderError(w, r, http.StatusBadRequest, "already authenticated")
+		return app.renderError(w, r, http.StatusBadRequest, errors.New("already authenticated"))
 	}
 
 	var form struct {
@@ -250,17 +238,6 @@ func (app *application) handleAuthRegisterPost(w http.ResponseWriter, r *http.Re
 
 	form.Email = app.sessionManager.GetString(r.Context(), verificationEmailSessionKey)
 	err := app.parseForm(r, &form)
-	if err != nil {
-		var validationErrors validator.ValidationErrors
-		switch {
-		case errors.As(err, &validationErrors):
-			return app.renderError(w, r, http.StatusUnprocessableEntity, validationErrors)
-		default:
-			return err
-		}
-	}
-
-	err = app.validate.Struct(&form)
 	if err != nil {
 		return err
 	}
@@ -451,13 +428,7 @@ func (app *application) handleAuthResetUpdatePost(w http.ResponseWriter, r *http
 	form.Email = app.sessionManager.GetString(r.Context(), resetEmailSessionKey)
 	err := app.parseForm(r, &form)
 	if err != nil {
-		var validationErrors validator.ValidationErrors
-		switch {
-		case errors.As(err, &validationErrors):
-			return app.renderError(w, r, http.StatusUnprocessableEntity, validationErrors)
-		default:
-			return err
-		}
+		return app.renderError(w, r, http.StatusBadRequest, nil)
 	}
 
 	token := app.sessionManager.GetString(r.Context(), resetTokenSessionKey)

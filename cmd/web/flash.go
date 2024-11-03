@@ -5,9 +5,10 @@ import "net/http"
 type FlashMessageType string
 
 const (
-	FlashSuccess FlashMessageType = "success"
-	FlashInfo    FlashMessageType = "info"
-	FlashError   FlashMessageType = "error"
+	FlashSuccess    = FlashMessageType("success")
+	FlashInfo       = FlashMessageType("info")
+	FlashError      = FlashMessageType("error")
+	flashSessionKey = "flash"
 )
 
 type FlashMessage struct {
@@ -16,15 +17,13 @@ type FlashMessage struct {
 }
 
 func (app *application) flash(r *http.Request, f FlashMessage) {
-	app.sessionManager.Put(r.Context(), "flash", f)
+	app.sessionManager.Put(r.Context(), flashSessionKey, f)
 }
 
 func (app *application) popFlash(r *http.Request) FlashMessage {
-	exists := app.sessionManager.Exists(r.Context(), "flash")
-
+	exists := app.sessionManager.Exists(r.Context(), flashSessionKey)
 	if exists {
-		f, ok := app.sessionManager.Pop(r.Context(), "flash").(FlashMessage)
-
+		f, ok := app.sessionManager.Pop(r.Context(), flashSessionKey).(FlashMessage)
 		if ok {
 			return f
 		}
