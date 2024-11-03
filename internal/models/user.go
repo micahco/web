@@ -207,7 +207,7 @@ func (m UserModel) Update(user *User) error {
 	sql := `
 		UPDATE user_ 
         SET email_ = $1, password_hash_ = $2
-        WHERE id_ = $3 AND version_ = $4;`
+        WHERE id_ = $3;`
 
 	args := []any{
 		user.Email,

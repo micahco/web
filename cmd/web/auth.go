@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/go-playground/validator/v10"
 	"github.com/gofrs/uuid/v5"
 	"github.com/micahco/web/internal/models"
 )
@@ -45,7 +46,7 @@ func (app *application) logout(r *http.Request) error {
 	return nil
 }
 
-// Checks the auth context set by the authenticate middleware
+// Check the auth context set by the authenticate middleware
 func (app *application) isAuthenticated(r *http.Request) bool {
 	isAuthenticated, ok := r.Context().Value(isAuthenticatedContextKey).(bool)
 	if !ok {
@@ -75,7 +76,13 @@ func (app *application) handleAuthLoginPost(w http.ResponseWriter, r *http.Reque
 
 	err := app.parseForm(r, &form)
 	if err != nil {
-		return err
+		var validationErrors validator.ValidationErrors
+		switch {
+		case errors.As(err, &validationErrors):
+			return app.renderError(w, r, http.StatusUnprocessableEntity, validationErrors)
+		default:
+			return err
+		}
 	}
 
 	user, err := app.models.User.GetForCredentials(form.Email, form.Password)
@@ -121,9 +128,14 @@ func (app *application) handleAuthSignupPost(w http.ResponseWriter, r *http.Requ
 
 	err := app.parseForm(r, &form)
 	if err != nil {
-		return err
+		var validationErrors validator.ValidationErrors
+		switch {
+		case errors.As(err, &validationErrors):
+			return app.renderError(w, r, http.StatusUnprocessableEntity, validationErrors)
+		default:
+			return err
+		}
 	}
-	fmt.Println(form.Email)
 
 	// Consistent flash message
 	f := FlashMessage{
@@ -239,7 +251,13 @@ func (app *application) handleAuthRegisterPost(w http.ResponseWriter, r *http.Re
 	form.Email = app.sessionManager.GetString(r.Context(), verificationEmailSessionKey)
 	err := app.parseForm(r, &form)
 	if err != nil {
-		return err
+		var validationErrors validator.ValidationErrors
+		switch {
+		case errors.As(err, &validationErrors):
+			return app.renderError(w, r, http.StatusUnprocessableEntity, validationErrors)
+		default:
+			return err
+		}
 	}
 
 	err = app.validate.Struct(&form)
@@ -327,7 +345,13 @@ func (app *application) handleAuthResetPost(w http.ResponseWriter, r *http.Reque
 
 		err := app.parseForm(r, &form)
 		if err != nil {
-			return err
+			var validationErrors validator.ValidationErrors
+			switch {
+			case errors.As(err, &validationErrors):
+				return app.renderError(w, r, http.StatusUnprocessableEntity, validationErrors)
+			default:
+				return err
+			}
 		}
 
 		email = form.Email
@@ -424,12 +448,17 @@ func (app *application) handleAuthResetUpdatePost(w http.ResponseWriter, r *http
 		Password string `form:"password" validate:"required,min=8,max=72"`
 	}
 
+	form.Email = app.sessionManager.GetString(r.Context(), resetEmailSessionKey)
 	err := app.parseForm(r, &form)
 	if err != nil {
-		return err
+		var validationErrors validator.ValidationErrors
+		switch {
+		case errors.As(err, &validationErrors):
+			return app.renderError(w, r, http.StatusUnprocessableEntity, validationErrors)
+		default:
+			return err
+		}
 	}
-
-	form.Email = app.sessionManager.GetString(r.Context(), resetEmailSessionKey)
 
 	token := app.sessionManager.GetString(r.Context(), resetTokenSessionKey)
 	if token == "" {

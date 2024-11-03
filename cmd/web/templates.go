@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/go-playground/validator/v10"
 	"github.com/justinas/nosurf"
 	"github.com/micahco/web/ui"
 )
@@ -58,6 +59,24 @@ func (app *application) render(w http.ResponseWriter, r *http.Request, statusCod
 func (app *application) renderError(w http.ResponseWriter, r *http.Request, statusCode int, data any) error {
 	if data == nil {
 		data = http.StatusText(statusCode)
+	}
+
+	fmt.Println(data)
+	if valerrs, ok := data.(validator.ValidationErrors); ok {
+		//verrs := make(map[string]string)
+		for _, err := range valerrs {
+			fmt.Println("ActualTag", err.ActualTag())
+			fmt.Println("Field", err.Field())
+			fmt.Println("Namesp", err.Namespace())
+			fmt.Println("Param", err.Param())
+			fmt.Println("StructField", err.StructField())
+			fmt.Println("StructName", err.StructNamespace())
+			fmt.Println("Tag", err.Tag())
+			fmt.Println("Type", err.Type())
+			fmt.Println("Value", err.Value())
+			fmt.Println("Kind", err.Kind().String())
+			fmt.Println(err)
+		}
 	}
 
 	// TODO: render error template
