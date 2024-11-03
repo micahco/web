@@ -4,15 +4,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{template "title" .}}</title>
+    <meta name="color-scheme" content="light dark">
+    <link rel="stylesheet" href="/static/water.css">
     <link rel="stylesheet" href="/static/main.css">
+    <title>{{template "title" .}}</title>
 </head>
 <body>
-    {{with .Flash}}
-    <div role="status" class="flash-{{.Type}}">
-        {{.Message}}
-    </div>
-    {{end}}
     {{if .IsAuthenticated}}
     <nav>
         <form action="/auth/logout" method="POST">
@@ -22,6 +19,11 @@
             </button>
         </form>
     </nav>
+    {{end}}
+    {{with .Flash}}
+    <div role="status" class="flex flash-{{.Type}}">
+        {{.Message}}
+    </div>
     {{end}}
     {{template "main" .}}
     {{template "scripts" .}}

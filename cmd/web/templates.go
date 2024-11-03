@@ -16,7 +16,7 @@ import (
 type templateData struct {
 	CSRFToken       string
 	CurrentYear     int
-	Flash           FlashMessage
+	Flash           *FlashMessage
 	FormErrors      FormErrors
 	IsAuthenticated bool
 	Data            any

@@ -65,13 +65,3 @@ db/migrations/up: confirm
 db/migrations/drop: confirm
 	@echo "Dropping the entire database schema..."
 	migrate -path ./migrations -database ${DATABASE_URL} drop
-
-## css/build: build tailwind styles
-.PHONY: css/build
-css/build:
-	tailwindcss -i ./ui/web/input.css -o ./ui/static/main.css --minify
-
-## css/watch: watch tailwind styles
-.PHONY: css/watch
-css/watch:
-	tailwindcss -i ./ui/web/input.css -o ./ui/static/main.css --watch
