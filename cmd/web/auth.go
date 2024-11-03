@@ -76,7 +76,7 @@ func (app *application) handleAuthLoginPost(w http.ResponseWriter, r *http.Reque
 
 	err := app.parseForm(r, &form)
 	if err != nil {
-		return app.renderError(w, r, http.StatusBadRequest, nil)
+		return err
 	}
 
 	user, err := app.models.User.GetForCredentials(form.Email, form.Password)
@@ -122,7 +122,7 @@ func (app *application) handleAuthSignupPost(w http.ResponseWriter, r *http.Requ
 
 	err := app.parseForm(r, &form)
 	if err != nil {
-		return app.renderError(w, r, http.StatusBadRequest, nil)
+		return err
 	}
 
 	// Consistent flash message
@@ -139,7 +139,7 @@ func (app *application) handleAuthSignupPost(w http.ResponseWriter, r *http.Requ
 
 	// If user does exist, do nothing but send flash message
 	if exists {
-		app.flash(r, f)
+		app.putFlash(r, f)
 		app.refresh(w, r)
 
 		return nil
@@ -154,7 +154,7 @@ func (app *application) handleAuthSignupPost(w http.ResponseWriter, r *http.Requ
 	// Don't send a new link if less than 5 minutes since last
 	if v != nil {
 		if time.Since(v.CreatedAt) < 5*time.Minute {
-			app.flash(r, f)
+			app.putFlash(r, f)
 			app.refresh(w, r)
 
 			return nil
@@ -193,7 +193,7 @@ func (app *application) handleAuthSignupPost(w http.ResponseWriter, r *http.Requ
 	app.sessionManager.RenewToken(r.Context())
 	app.sessionManager.Put(r.Context(), verificationEmailSessionKey, form.Email)
 
-	app.flash(r, f)
+	app.putFlash(r, f)
 	app.refresh(w, r)
 
 	return nil
@@ -253,7 +253,7 @@ func (app *application) handleAuthRegisterPost(w http.ResponseWriter, r *http.Re
 			return app.renderError(w, r, http.StatusUnauthorized, nil)
 		}
 		if errors.Is(err, models.ErrExpiredVerification) {
-			app.flash(r, ExpiredTokenFlash)
+			app.putFlash(r, ExpiredTokenFlash)
 			http.Redirect(w, r, "/", http.StatusSeeOther)
 
 			return nil
@@ -288,7 +288,7 @@ func (app *application) handleAuthRegisterPost(w http.ResponseWriter, r *http.Re
 		Type:    FlashSuccess,
 		Message: "Successfully created account. Welcome!",
 	}
-	app.flash(r, f)
+	app.putFlash(r, f)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 
 	return nil
@@ -346,7 +346,7 @@ func (app *application) handleAuthResetPost(w http.ResponseWriter, r *http.Reque
 
 	// If user does not exist, respond with consistent flash message
 	if !exists {
-		app.flash(r, f)
+		app.putFlash(r, f)
 		app.refresh(w, r)
 
 		return nil
@@ -361,7 +361,7 @@ func (app *application) handleAuthResetPost(w http.ResponseWriter, r *http.Reque
 	// Don't send a new link if less than 5 minutes since last
 	if v != nil {
 		if time.Since(v.CreatedAt) < 5*time.Minute {
-			app.flash(r, f)
+			app.putFlash(r, f)
 			app.refresh(w, r)
 
 			return nil
@@ -397,7 +397,7 @@ func (app *application) handleAuthResetPost(w http.ResponseWriter, r *http.Reque
 	app.sessionManager.RenewToken(r.Context())
 	app.sessionManager.Put(r.Context(), resetEmailSessionKey, email)
 
-	app.flash(r, f)
+	app.putFlash(r, f)
 	app.refresh(w, r)
 
 	return nil
@@ -428,7 +428,7 @@ func (app *application) handleAuthResetUpdatePost(w http.ResponseWriter, r *http
 	form.Email = app.sessionManager.GetString(r.Context(), resetEmailSessionKey)
 	err := app.parseForm(r, &form)
 	if err != nil {
-		return app.renderError(w, r, http.StatusBadRequest, nil)
+		return err
 	}
 
 	token := app.sessionManager.GetString(r.Context(), resetTokenSessionKey)
@@ -442,7 +442,7 @@ func (app *application) handleAuthResetUpdatePost(w http.ResponseWriter, r *http
 			return app.renderError(w, r, http.StatusUnauthorized, nil)
 		}
 		if errors.Is(err, models.ErrExpiredVerification) {
-			app.flash(r, ExpiredTokenFlash)
+			app.putFlash(r, ExpiredTokenFlash)
 			http.Redirect(w, r, "/", http.StatusSeeOther)
 
 			return nil
@@ -477,7 +477,7 @@ func (app *application) handleAuthResetUpdatePost(w http.ResponseWriter, r *http
 		Type:    FlashSuccess,
 		Message: "Successfully updated password. Please login.",
 	}
-	app.flash(r, f)
+	app.putFlash(r, f)
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 

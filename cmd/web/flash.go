@@ -16,7 +16,7 @@ type FlashMessage struct {
 	Message string
 }
 
-func (app *application) flash(r *http.Request, f FlashMessage) {
+func (app *application) putFlash(r *http.Request, f FlashMessage) {
 	app.sessionManager.Put(r.Context(), flashSessionKey, f)
 }
 

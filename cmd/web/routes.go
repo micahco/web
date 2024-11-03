@@ -13,16 +13,18 @@ import (
 
 type withError func(w http.ResponseWriter, r *http.Request) error
 
-// smol http.HandlerFunc wrapper with error handling
+// http.HandlerFunc wrapper with error handling
 func (app *application) handle(h withError) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := h(w, r); err != nil {
 			var formErrors FormErrors
 			switch {
 			case errors.As(err, &formErrors):
+				// Redirect to referer with form errors as session data
 				app.putFormErrors(r, formErrors)
 				http.Redirect(w, r, r.Header.Get("Referer"), http.StatusSeeOther)
 			default:
+				// Log unexpected error and return internal server error
 				app.logger.Error("handled unexpected error", slog.Any("err", err), slog.String("type", fmt.Sprintf("%T", err)))
 
 				http.Error(w,

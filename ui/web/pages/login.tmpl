@@ -20,6 +20,9 @@
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
         <label for="email">Email</label>
         <input type="email" name="email" autocomplete="username" required>
+        {{with .FormErrors.Email}}
+        <span class="form-error">{{.}}</span>
+        {{end}}
         <button>Sign up</button>
     </form>
 </main>

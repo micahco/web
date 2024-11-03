@@ -5,12 +5,22 @@
         <h1>Update Password</h1>
         <form action="/auth/reset/update" method="POST">
             <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-            {{if not .Data.HasSessionEmail}}
-            <label for="email">Email</label>
-            <input type="email" name="email" autocomplete="username" required>
-            {{end}}
-            <label for="password">New Password</label>
-            <input type="password" name="password" autocomplete="current-password" required>
+            <div>
+                {{if not .Data.HasSessionEmail}}
+                <label for="email">Email</label>
+                <input type="email" name="email" autocomplete="username" required>
+                {{with .FormErrors.Email}}
+                <span class="form-error">{{.}}</span>
+                {{end}}
+                {{end}}
+            </div>
+            <div>
+                <label for="password">New Password</label>
+                <input type="password" name="password" autocomplete="current-password" required>
+                {{with .FormErrors.Password}}
+                <span class="form-error">{{.}}</span>
+                {{end}}
+            </div>
             <button>Update</button>
         </form>
     </main>

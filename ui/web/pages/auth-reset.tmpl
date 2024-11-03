@@ -13,6 +13,9 @@
             {{if not .IsAuthenticated}}
             <label for="email">Email</label>
             <input type="email" name="email" autocomplete="username" required>
+            {{with .FormErrors.Email}}
+            <span class="form-error">{{.}}</span>
+            {{end}}
             {{end}}         
             <button>Send verification</button>
         </form>
