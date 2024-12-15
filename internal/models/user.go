@@ -2,6 +2,7 @@ package models
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"time"
 
@@ -142,7 +143,12 @@ func (m *UserModel) GetWithEmail(email string) (*User, error) {
 func (m *UserModel) GetForCredentials(email, password string) (*User, error) {
 	u, err := m.GetWithEmail(email)
 	if err != nil {
-		return nil, err
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			return nil, ErrInvalidCredentials
+		default:
+			return nil, err
+		}
 	}
 
 	match, err := argon2id.ComparePasswordAndHash(password, string(u.PasswordHash))
