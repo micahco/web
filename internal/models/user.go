@@ -2,7 +2,6 @@ package models
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"time"
 
@@ -144,7 +143,7 @@ func (m *UserModel) GetForCredentials(email, password string) (*User, error) {
 	u, err := m.GetWithEmail(email)
 	if err != nil {
 		switch {
-		case errors.Is(err, sql.ErrNoRows):
+		case errors.Is(err, ErrNoRecord):
 			return nil, ErrInvalidCredentials
 		default:
 			return nil, err
