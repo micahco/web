@@ -24,13 +24,10 @@ func (app *application) handle(h withError) http.HandlerFunc {
 				app.putFormErrors(r, formErrors)
 				http.Redirect(w, r, r.Header.Get("Referer"), http.StatusSeeOther)
 			default:
-				// Log unexpected error and return internal server error
+				// Log unexpected error and render internal server error
 				app.logger.Error("handled unexpected error", slog.Any("err", err), slog.String("type", fmt.Sprintf("%T", err)))
 
-				http.Error(w,
-					http.StatusText(http.StatusInternalServerError),
-					http.StatusInternalServerError,
-				)
+				app.renderError(w, r, http.StatusInternalServerError, "")
 			}
 		}
 	}
@@ -125,7 +122,7 @@ func (app *application) getArticleID(w http.ResponseWriter, r *http.Request) err
 
 	id, err := strconv.Atoi(p)
 	if err != nil {
-		return app.renderError(w, r, http.StatusBadRequest, err)
+		return app.renderError(w, r, http.StatusBadRequest, "")
 	}
 
 	fmt.Fprintf(w, "Article ID: %d", id)

@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/go-playground/validator/v10"
 	"github.com/gofrs/uuid/v5"
 	"github.com/micahco/web/internal/models"
 )
@@ -66,7 +65,7 @@ func (app *application) getSessionUserID(r *http.Request) (uuid.UUID, error) {
 }
 func (app *application) handleAuthLoginPost(w http.ResponseWriter, r *http.Request) error {
 	if app.isAuthenticated(r) {
-		return app.renderError(w, r, http.StatusBadRequest, errors.New("already authenticated"))
+		return app.renderError(w, r, http.StatusBadRequest, "already authenticated")
 	}
 
 	var form struct {
@@ -83,7 +82,7 @@ func (app *application) handleAuthLoginPost(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		switch {
 		case errors.Is(err, models.ErrInvalidCredentials):
-			return app.renderError(w, r, http.StatusUnauthorized, nil)
+			return app.renderError(w, r, http.StatusUnauthorized, "")
 		default:
 			return err
 		}
@@ -113,7 +112,7 @@ func (app *application) handleAuthLogoutPost(w http.ResponseWriter, r *http.Requ
 
 func (app *application) handleAuthSignupPost(w http.ResponseWriter, r *http.Request) error {
 	if app.isAuthenticated(r) {
-		return app.renderError(w, r, http.StatusBadRequest, errors.New("already authenticated"))
+		return app.renderError(w, r, http.StatusBadRequest, "already authenticated")
 	}
 
 	var form struct {
@@ -201,12 +200,12 @@ func (app *application) handleAuthSignupPost(w http.ResponseWriter, r *http.Requ
 
 func (app *application) handleAuthRegisterGet(w http.ResponseWriter, r *http.Request) error {
 	if app.isAuthenticated(r) {
-		return app.renderError(w, r, http.StatusBadRequest, errors.New("already authenticated"))
+		return app.renderError(w, r, http.StatusBadRequest, "already authenticated")
 	}
 
 	queryToken := r.URL.Query().Get("token")
 	if queryToken == "" {
-		return app.renderError(w, r, http.StatusBadRequest, errors.New("missing verification token"))
+		return app.renderError(w, r, http.StatusBadRequest, "missing verification token")
 	}
 
 	app.sessionManager.Put(r.Context(), verificationTokenSessionKey, queryToken)
@@ -228,7 +227,7 @@ var ExpiredTokenFlash = FlashMessage{
 
 func (app *application) handleAuthRegisterPost(w http.ResponseWriter, r *http.Request) error {
 	if app.isAuthenticated(r) {
-		return app.renderError(w, r, http.StatusBadRequest, errors.New("already authenticated"))
+		return app.renderError(w, r, http.StatusBadRequest, "already authenticated")
 	}
 
 	var form struct {
@@ -244,13 +243,13 @@ func (app *application) handleAuthRegisterPost(w http.ResponseWriter, r *http.Re
 
 	token := app.sessionManager.GetString(r.Context(), verificationTokenSessionKey)
 	if token == "" {
-		return app.renderError(w, r, http.StatusUnauthorized, nil)
+		return app.renderError(w, r, http.StatusUnauthorized, "")
 	}
 
 	err = app.models.Verification.Verify(token, form.Email)
 	if err != nil {
 		if errors.Is(err, models.ErrNoRecord) {
-			return app.renderError(w, r, http.StatusUnauthorized, nil)
+			return app.renderError(w, r, http.StatusUnauthorized, "")
 		}
 		if errors.Is(err, models.ErrExpiredVerification) {
 			app.putFlash(r, ExpiredTokenFlash)
@@ -271,7 +270,7 @@ func (app *application) handleAuthRegisterPost(w http.ResponseWriter, r *http.Re
 	user, err := app.models.User.New(form.Email, form.Password)
 	if err != nil {
 		if errors.Is(err, models.ErrDuplicateEmail) {
-			return app.renderError(w, r, http.StatusUnauthorized, nil)
+			return app.renderError(w, r, http.StatusUnauthorized, "")
 		}
 
 		return err
@@ -322,13 +321,7 @@ func (app *application) handleAuthResetPost(w http.ResponseWriter, r *http.Reque
 
 		err := app.parseForm(r, &form)
 		if err != nil {
-			var validationErrors validator.ValidationErrors
-			switch {
-			case errors.As(err, &validationErrors):
-				return app.renderError(w, r, http.StatusUnprocessableEntity, validationErrors)
-			default:
-				return err
-			}
+			return err
 		}
 
 		email = form.Email
@@ -406,7 +399,7 @@ func (app *application) handleAuthResetPost(w http.ResponseWriter, r *http.Reque
 func (app *application) handleAuthResetUpdateGet(w http.ResponseWriter, r *http.Request) error {
 	queryToken := r.URL.Query().Get("token")
 	if queryToken == "" {
-		return app.renderError(w, r, http.StatusUnauthorized, nil)
+		return app.renderError(w, r, http.StatusUnauthorized, http.StatusText(http.StatusUnauthorized))
 	}
 
 	app.sessionManager.Put(r.Context(), resetTokenSessionKey, queryToken)
@@ -433,13 +426,13 @@ func (app *application) handleAuthResetUpdatePost(w http.ResponseWriter, r *http
 
 	token := app.sessionManager.GetString(r.Context(), resetTokenSessionKey)
 	if token == "" {
-		return app.renderError(w, r, http.StatusUnauthorized, nil)
+		return app.renderError(w, r, http.StatusUnauthorized, http.StatusText(http.StatusUnauthorized))
 	}
 
 	err = app.models.Verification.Verify(token, form.Email)
 	if err != nil {
 		if errors.Is(err, models.ErrNoRecord) {
-			return app.renderError(w, r, http.StatusUnauthorized, nil)
+			return app.renderError(w, r, http.StatusUnauthorized, http.StatusText(http.StatusUnauthorized))
 		}
 		if errors.Is(err, models.ErrExpiredVerification) {
 			app.putFlash(r, ExpiredTokenFlash)
