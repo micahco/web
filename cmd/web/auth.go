@@ -82,7 +82,7 @@ func (app *application) handleAuthLoginPost(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		switch {
 		case errors.Is(err, models.ErrInvalidCredentials):
-			return app.renderError(w, r, http.StatusUnauthorized, "")
+			return app.renderError(w, r, http.StatusUnauthorized, http.StatusText(http.StatusUnauthorized))
 		default:
 			return err
 		}
@@ -243,13 +243,13 @@ func (app *application) handleAuthRegisterPost(w http.ResponseWriter, r *http.Re
 
 	token := app.sessionManager.GetString(r.Context(), verificationTokenSessionKey)
 	if token == "" {
-		return app.renderError(w, r, http.StatusUnauthorized, "")
+		return app.renderError(w, r, http.StatusUnauthorized, http.StatusText(http.StatusUnauthorized))
 	}
 
 	err = app.models.Verification.Verify(token, form.Email)
 	if err != nil {
 		if errors.Is(err, models.ErrNoRecord) {
-			return app.renderError(w, r, http.StatusUnauthorized, "")
+			return app.renderError(w, r, http.StatusUnauthorized, http.StatusText(http.StatusUnauthorized))
 		}
 		if errors.Is(err, models.ErrExpiredVerification) {
 			app.putFlash(r, ExpiredTokenFlash)
@@ -270,7 +270,7 @@ func (app *application) handleAuthRegisterPost(w http.ResponseWriter, r *http.Re
 	user, err := app.models.User.New(form.Email, form.Password)
 	if err != nil {
 		if errors.Is(err, models.ErrDuplicateEmail) {
-			return app.renderError(w, r, http.StatusUnauthorized, "")
+			return app.renderError(w, r, http.StatusUnauthorized, http.StatusText(http.StatusUnauthorized))
 		}
 
 		return err
