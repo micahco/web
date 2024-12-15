@@ -102,7 +102,7 @@ func (m *UserModel) GetWithID(id uuid.UUID) (*User, error) {
 	if err != nil {
 		switch {
 		case errors.Is(err, pgx.ErrNoRows):
-			return nil, ErrInvalidCredentials
+			return nil, ErrNoRecord
 		default:
 			return nil, err
 		}
@@ -130,7 +130,7 @@ func (m *UserModel) GetWithEmail(email string) (*User, error) {
 	if err != nil {
 		switch {
 		case errors.Is(err, pgx.ErrNoRows):
-			return nil, ErrInvalidCredentials
+			return nil, ErrNoRecord
 		default:
 			return nil, err
 		}
